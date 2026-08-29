@@ -111,3 +111,4 @@ class HTTPAttack(ProtocolAttack):
         #Write it to the file
         #with open(os.path.join(self.config.lootdir,fileName),'w') as of:
         #    of.write(self.client.lastresult)
+        #This file is a plugin for Impacket's ntlmrelayx that performs a certificate theft attack against Active Directory Certificate Services (ADCS).
