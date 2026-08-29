@@ -2,11 +2,21 @@
 
 A curated collection of Active Directory security tools with one-line installation.
 
-##  Install
+##  Install for linux
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/boboaung1337/adtools/main/install.sh | bash
 ```
+## Install for Windows
+### PassTheCert.exe
+```bash
+wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/PassTheCert.exe
+```
+### PetitPotam.exe
+```bash
+wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/PetitPotam.exe
+```
+
 
 ## 📦 Included Tools
 
