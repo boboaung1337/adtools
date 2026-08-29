@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 #
 # Almond (almond.consulting). Copyright (C) 2022 Almond. All rights reserved.
 #
