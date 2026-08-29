@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 #
 # Based on examples from minikerberos by skelsec
 # Parts of this code was inspired by the following project by @rubin_mor
