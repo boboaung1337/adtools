@@ -1,4 +1,4 @@
-#!/usr/bin/env 
+#!/usr/bin/env -S uv run --script
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
