@@ -15,4 +15,7 @@ wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/gettgtpkinit.py
 # Download passthecert.py
 wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/passthecert.py && sudo mv passthecert.py /usr/local/bin/ && sudo chmod +x /usr/local/bin/passthecert.py
 
+# Download ntlm_theft.py
+wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/ntlm_theft.py && sudo mv ntlm_theft.py /usr/local/bin/ && sudo chmod +x /usr/local/bin/ntlm_theft.py
+
 echo "All tools installed successfully!"
