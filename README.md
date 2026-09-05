@@ -6,6 +6,10 @@ A curated collection of Active Directory security tools with one-line installati
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+## bloodhound Install
+```bash
+curl -sSL https://github.com/boboaung1337/adtools/raw/refs/heads/main/install_bloodhound.sh | bash
+```
 
 ##  Sliver Install
 ```bash
