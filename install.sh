@@ -90,5 +90,8 @@ wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/winrmexec.py &&
 # Download kerbrute
 wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/kerbrute && sudo mv kerbrute /usr/local/bin/ && sudo chmod +x /usr/local/bin/kerbrute
 
+# Download crossrealms
+wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/crossrealms && sudo mv crossrealms /usr/local/bin/ && sudo chmod +x /usr/local/bin/crossrealms
+
 echo "All tools installed successfully!"
 
