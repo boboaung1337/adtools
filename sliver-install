@@ -1,0 +1,162 @@
+#!/bin/bash
+set -e
+
+SLIVER_MINISIGN_PUB_KEY="RWTZPg959v3b7tLG7VzKHRB1/QT+d3c71Uzetfa44qAoX5rH7mGoQTTR"
+SLIVER_PLATFORM="linux"
+
+# Set installation directory for kali user
+INSTALL_DIR="$HOME/.local/bin"
+CONFIG_DIR="$HOME/.sliver-client"
+mkdir -p "$INSTALL_DIR" "$CONFIG_DIR/configs"
+
+# Check for minisign
+MINISIGN_PKG=(minisign)
+if command -v minisign &> /dev/null; then
+    MINISIGN_PKG=()
+fi
+
+# Install dependencies (only if needed)
+if command -v apt-get &> /dev/null; then
+    echo "Installing dependencies using apt..."
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -yqq \
+        "${MINISIGN_PKG[@]}" curl build-essential git
+elif command -v yum &> /dev/null; then
+    echo "Installing dependencies using yum..."
+    sudo yum -y install "${MINISIGN_PKG[@]}" curl make git
+elif command -v pacman &>/dev/null; then
+    echo "Installing dependencies using pacman..."
+    if [[ ${#MINISIGN_PKG[@]} -gt 0 ]]; then
+        sudo pacman --noconfirm -S "${MINISIGN_PKG[@]}"
+    fi
+else
+    echo "Unsupported OS, exiting"
+    exit
+fi
+
+# Verify necessary tools are installed
+for cmd in curl awk minisign; do
+    if ! command -v "$cmd" &> /dev/null; then
+        echo "$cmd could not be found, installing..."
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get install -yqq "$cmd"
+        elif command -v yum &> /dev/null; then
+            sudo yum -y install "$cmd"
+        elif command -v pacman &>/dev/null; then
+            sudo pacman --noconfirm -S "$cmd"
+        fi
+    fi
+done
+
+cd /tmp || exit
+echo "Running from $(pwd)"
+
+echo "Using Minisign public key..."
+
+# Stop existing Sliver processes for this user
+stop_existing_sliver_daemon() {
+    if pgrep -f "sliver-server daemon" > /dev/null 2>&1; then
+        echo "Stopping running Sliver daemon..."
+        pkill -f "sliver-server daemon" || true
+    fi
+}
+
+# Download and Unpack Sliver Server
+ARCH="$(uname -m)"
+case "$ARCH" in
+    x86_64|amd64)
+        SLIVER_PLATFORM="linux-amd64"
+        ;;
+    aarch64|arm64)
+        SLIVER_PLATFORM="linux-arm64"
+        ;;
+    *)
+        echo "Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+esac
+
+echo "Fetching latest Sliver release URLs..."
+ARTIFACTS=$(curl -s "https://api.github.com/repos/BishopFox/sliver/releases/latest" | awk -F '"' '/browser_download_url/{print $4}')
+SLIVER_SERVER="sliver-server_${SLIVER_PLATFORM}"
+SLIVER_CLIENT="sliver-client_${SLIVER_PLATFORM}"
+
+for URL in $ARTIFACTS
+do
+    if [[ "$URL" == *"$SLIVER_SERVER"* ]]; then
+        echo "Downloading $URL"
+        curl -L "$URL" --output "$(basename "$URL")"
+    fi
+    if [[ "$URL" == *"$SLIVER_CLIENT"* ]]; then
+        echo "Downloading $URL"
+        curl -L "$URL" --output "$(basename "$URL")"
+    fi
+done
+
+# Signature verification
+echo "Verifying signatures ..."
+minisign -Vm "/tmp/$SLIVER_SERVER" -x "/tmp/$SLIVER_SERVER.minisig" -P "$SLIVER_MINISIGN_PUB_KEY"
+minisign -Vm "/tmp/$SLIVER_CLIENT" -x "/tmp/$SLIVER_CLIENT.minisig" -P "$SLIVER_MINISIGN_PUB_KEY"
+
+stop_existing_sliver_daemon
+
+if test -f "/tmp/$SLIVER_SERVER"; then
+    echo "Moving Sliver server executable to $INSTALL_DIR/sliver-server..."
+    mv "/tmp/$SLIVER_SERVER" "$INSTALL_DIR/sliver-server"
+    chmod 755 "$INSTALL_DIR/sliver-server"
+    
+    echo "Unpacking Sliver server..."
+    "$INSTALL_DIR/sliver-server" unpack --force
+else
+    echo "ERROR: Sliver server not found"
+    exit 3
+fi
+
+if test -f "/tmp/$SLIVER_CLIENT"; then
+    echo "Moving Sliver client executable to $INSTALL_DIR/sliver-client..."
+    mv "/tmp/$SLIVER_CLIENT" "$INSTALL_DIR/sliver-client"
+    chmod 755 "$INSTALL_DIR/sliver-client"
+    
+    echo "Creating symbolic link for sliver-client at $INSTALL_DIR/sliver..."
+    ln -sf "$INSTALL_DIR/sliver-client" "$INSTALL_DIR/sliver"
+    chmod 755 "$INSTALL_DIR/sliver"
+else
+    echo "ERROR: Sliver client not found"
+    exit 3
+fi
+
+# Generate local configs for kali user
+echo "Generating operator configs for kali user..."
+"$INSTALL_DIR/sliver-server" operator \
+    --name kali \
+    --lhost 127.0.0.1 \
+    --permissions all \
+    --save "$CONFIG_DIR/configs"
+
+chown -R kali:kali "$CONFIG_DIR"
+
+# Add to PATH if not already there
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+    echo "Adding $INSTALL_DIR to PATH in .bashrc..."
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+echo ""
+echo "============================================"
+echo "✅ Sliver installation complete!"
+echo "============================================"
+echo ""
+echo "To start the Sliver server:"
+echo "  sliver-server daemon"
+echo ""
+echo "To start the Sliver client:"
+echo "  sliver"
+echo ""
+echo "Or run in the background:"
+echo "  sliver-server daemon &"
+echo ""
+echo "Config saved to: $CONFIG_DIR"
+echo ""
+echo "If 'sliver' command is not found, run:"
+echo "  source ~/.bashrc"
+echo "============================================"
