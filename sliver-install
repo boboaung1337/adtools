@@ -141,12 +141,6 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# Add this at the end of the script
-# Self-delete the installer script
-if [[ "$0" != "bash" && "$0" != "/bin/bash" ]]; then
-    echo "Removing installer script..."
-    rm -f "$0"
-fi
 
 echo ""
 echo "============================================"
