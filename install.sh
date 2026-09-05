@@ -96,5 +96,8 @@ wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/crossrealms && 
 # Download base64_pwd-to-NTLM.py
 wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/base64_pwd-to-NTLM.py && sudo mv base64_pwd-to-NTLM.py /usr/local/bin/ && sudo chmod +x /usr/local/bin/base64_pwd-to-NTLM.py
 
+# Download cracken
+wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/cracken && sudo mv cracken /usr/local/bin/ && sudo chmod +x /usr/local/bin/cracken
+ 
 echo "All tools installed successfully!"
 
