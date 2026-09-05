@@ -2,6 +2,10 @@
 
 A curated collection of Active Directory security tools with one-line installation.
 
+##  Sliver Install
+```bash
+curl -sSL https://github.com/boboaung1337/adtools/raw/refs/heads/main/sliver-install | bash
+```
 ##  Install for linux
 
 ```bash
