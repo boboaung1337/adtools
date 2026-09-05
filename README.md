@@ -2,7 +2,7 @@
 
 A curated collection of Active Directory security tools with one-line installation.
 
-# UV Install On macOS and Linux.
+## UV Install On macOS and Linux.
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
