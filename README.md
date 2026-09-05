@@ -2,6 +2,11 @@
 
 A curated collection of Active Directory security tools with one-line installation.
 
+# UV Install On macOS and Linux.
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 ##  Sliver Install
 ```bash
 curl -sSL https://github.com/boboaung1337/adtools/raw/refs/heads/main/sliver-install | bash  && rm -f sliver-install
