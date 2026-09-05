@@ -11,7 +11,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```bash
 curl -sSL https://github.com/boboaung1337/adtools/raw/refs/heads/main/sliver-install | bash  && rm -f sliver-install
 ```
-##  Install for linux
+##  Tools Install for linux
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/boboaung1337/adtools/main/install.sh | bash
