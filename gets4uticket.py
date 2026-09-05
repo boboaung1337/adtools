@@ -1,4 +1,11 @@
 #!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#     "minikerberos>=0.4.9",
+# ]
+# ///
+
 #
 # Based on examples from minikerberos by skelsec
 #
