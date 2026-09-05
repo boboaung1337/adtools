@@ -1,0 +1,831 @@
+#!/usr/bin/env -S uv run --script
+
+import subprocess
+import re
+import sys
+import socket
+import ipaddress
+import dns.resolver
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+import tempfile
+import argparse
+
+class UniversalKrb5Generator:
+    def __init__(self, network=None, verbose=False):
+        self.network = network or self._detect_network()
+        self.domains = {}
+        self.dc_info = {}
+        self.trusts = []
+        self.verbose = verbose
+        
+    def _detect_network(self):
+        """Auto-detect network from current IP"""
+        try:
+            # Get current IP
+            result = subprocess.run(['ip', 'route'], capture_output=True, text=True)
+            for line in result.stdout.split('\n'):
+                if 'src' in line and 'default' not in line:
+                    parts = line.split()
+                    for i, part in enumerate(parts):
+                        if part == 'src' and i + 1 < len(parts):
+                            ip = parts[i + 1]
+                            # Get network prefix
+                            for j, p in enumerate(parts):
+                                if '/' in p and i > j:
+                                    network = p
+                                    if ip:
+                                        return f"{ip}/{network.split('/')[1]}"
+        except:
+            pass
+        return "172.16.0.0/16"  # Fallback
+    
+    def check_command(self, cmd):
+        """Check if command exists"""
+        try:
+            subprocess.run(['which', cmd], capture_output=True, check=True)
+            return True
+        except:
+            return False
+    
+    def get_network_range(self, network):
+        """Parse network range and return list of IPs"""
+        ips = []
+        try:
+            if '/' in network:
+                net = ipaddress.ip_network(network, strict=False)
+                # Only scan first 254 IPs in /24 or relevant range
+                if net.prefixlen <= 24:
+                    for ip in net.hosts():
+                        ips.append(str(ip))
+                        if len(ips) > 254:  # Limit scanning
+                            break
+            else:
+                ips.append(network)
+        except:
+            # Manual parsing fallback
+            parts = network.split('.')
+            if len(parts) >= 3:
+                base = '.'.join(parts[:3])
+                for i in range(1, 255):
+                    ips.append(f"{base}.{i}")
+        return ips[:254]  # Limit to /24
+    
+    def discover_with_dns_srv(self):
+        """Discover domains via DNS SRV records"""
+        if self.verbose:
+            print("[*] Discovering via DNS SRV records...")
+        domains = {}
+        
+        # Try common domain suffixes
+        suffixes = ['htb', 'local', 'ext', 'corp', 'internal', 'lan', 'test', 'exam', 'lab', 'org', 'com', 'net']
+        
+        for suffix in suffixes:
+            try:
+                # Query _kerberos._tcp SRV
+                answers = dns.resolver.resolve(f'_kerberos._tcp.{suffix}', 'SRV')
+                for answer in answers:
+                    server = str(answer.target).rstrip('.')
+                    if server and '.' in server:
+                        domain = '.'.join(server.split('.')[1:])
+                        if domain:
+                            realm = domain.upper()
+                            hostname = server.split('.')[0]
+                            domains[realm] = {
+                                'domain': domain,
+                                'hostname': hostname,
+                                'kdc': server,
+                                'source': 'DNS SRV'
+                            }
+                            if self.verbose:
+                                print(f"[+] Found via DNS SRV: {domain}")
+            except:
+                pass
+                
+        return domains
+    
+    def discover_with_dns_ns(self):
+        """Discover via DNS NS records"""
+        if self.verbose:
+            print("[*] Discovering via DNS NS records...")
+        domains = {}
+        
+        suffixes = ['htb', 'local', 'ext', 'corp', 'internal']
+        
+        for suffix in suffixes:
+            try:
+                answers = dns.resolver.resolve(suffix, 'NS')
+                for answer in answers:
+                    server = str(answer.target).rstrip('.')
+                    if server:
+                        domain = suffix
+                        realm = domain.upper()
+                        hostname = server.split('.')[0] if '.' in server else 'dc'
+                        domains[realm] = {
+                            'domain': domain,
+                            'hostname': hostname,
+                            'kdc': server if '.' in server else f"{hostname}.{domain}",
+                            'source': 'DNS NS'
+                        }
+                        if self.verbose:
+                            print(f"[+] Found via DNS NS: {domain}")
+            except:
+                pass
+                
+        return domains
+    
+    def discover_with_nxc(self):
+        """Discover domains using nxc"""
+        if self.verbose:
+            print("[*] Discovering via nxc...")
+        domains = {}
+        
+        nxc_commands = ['nxc', 'netexec']
+        cmd = None
+        for c in nxc_commands:
+            if self.check_command(c):
+                cmd = c
+                break
+                
+        if not cmd:
+            return domains
+            
+        try:
+            # Try different protocols
+            for protocol in ['smb', 'ldap', 'winrm']:
+                result = subprocess.run(
+                    [cmd, protocol, self.network],
+                    capture_output=True, text=True, timeout=60
+                )
+                
+                for line in result.stdout.split('\n'):
+                    if 'domain:' in line.lower():
+                        domain_match = re.search(r'domain:([^\s\)]+)', line, re.IGNORECASE)
+                        if domain_match:
+                            domain = domain_match.group(1).lower().strip()
+                            if domain and domain != 'workgroup':
+                                realm = domain.upper()
+                                
+                                hostname_match = re.search(r'name:([^\s\)]+)', line, re.IGNORECASE)
+                                hostname = hostname_match.group(1).lower().strip() if hostname_match else domain.split('.')[0]
+                                
+                                ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
+                                ip = ip_match.group(1) if ip_match else ''
+                                
+                                # Determine KDC - prioritize actual hostname
+                                if hostname and domain:
+                                    kdc = f"{hostname}.{domain}"
+                                elif ip:
+                                    kdc = ip
+                                else:
+                                    kdc = f"dc.{domain}"
+                                
+                                # Only add if we have a valid hostname (not just domain)
+                                if hostname and hostname != domain.split('.')[0]:
+                                    domains[realm] = {
+                                        'domain': domain,
+                                        'hostname': hostname,
+                                        'kdc': kdc,
+                                        'ip': ip,
+                                        'source': f'nxc ({protocol})',
+                                        'priority': 10  # Higher priority
+                                    }
+                                elif realm not in domains:
+                                    domains[realm] = {
+                                        'domain': domain,
+                                        'hostname': hostname,
+                                        'kdc': kdc,
+                                        'ip': ip,
+                                        'source': f'nxc ({protocol})',
+                                        'priority': 5
+                                    }
+                                if self.verbose:
+                                    print(f"[+] Found via nxc: {domain} ({kdc})")
+                if domains:
+                    break
+        except Exception as e:
+            if self.verbose:
+                print(f"[!] nxc failed: {e}")
+            
+        return domains
+    
+    def discover_with_nmap(self):
+        """Enhanced nmap discovery"""
+        if self.verbose:
+            print("[*] Discovering via nmap...")
+        domains = {}
+        
+        if not self.check_command('nmap'):
+            return domains
+            
+        try:
+            # Comprehensive scan
+            result = subprocess.run([
+                'nmap', '-p', '88,389,636,464,445', '--open', '-T4', '-sV',
+                '--script=ldap-rootdse,smb-os-discovery', self.network
+            ], capture_output=True, text=True, timeout=120)
+            
+            current_ip = None
+            current_hostname = None
+            
+            for line in result.stdout.split('\n'):
+                # Parse IP
+                ip_match = re.search(r'Nmap scan report for (\d+\.\d+\.\d+\.\d+)', line)
+                if ip_match:
+                    current_ip = ip_match.group(1)
+                    current_hostname = None
+                    continue
+                
+                # Parse hostname
+                hostname_match = re.search(r'Nmap scan report for ([^\s]+) \((\d+\.\d+\.\d+\.\d+)\)', line)
+                if hostname_match:
+                    current_hostname = hostname_match.group(1)
+                    current_ip = hostname_match.group(2)
+                    if '.' in current_hostname:
+                        parts = current_hostname.split('.')
+                        if len(parts) >= 2:
+                            domain = '.'.join(parts[1:]).lower().strip()
+                            if domain:
+                                realm = domain.upper()
+                                # Prefer this over other methods since it has actual hostname
+                                domains[realm] = {
+                                    'domain': domain,
+                                    'hostname': parts[0],
+                                    'kdc': current_hostname,
+                                    'ip': current_ip,
+                                    'source': 'nmap',
+                                    'priority': 8
+                                }
+                                if self.verbose:
+                                    print(f"[+] Found via nmap: {domain} ({current_hostname})")
+                    continue
+                
+                # Parse LDAP info
+                if 'defaultNamingContext:' in line:
+                    domain_match = re.search(r'DC=([^,]+),DC=([^\s,]+)', line)
+                    if domain_match and current_ip:
+                        domain = f"{domain_match.group(1)}.{domain_match.group(2)}".lower().strip()
+                        if domain:
+                            realm = domain.upper()
+                            hostname = domain.split('.')[0]
+                            if realm not in domains:
+                                domains[realm] = {
+                                    'domain': domain,
+                                    'hostname': hostname,
+                                    'kdc': f"{hostname}.{domain}",
+                                    'ip': current_ip,
+                                    'source': 'nmap LDAP',
+                                    'priority': 3
+                                }
+                                if self.verbose:
+                                    print(f"[+] Found via LDAP: {domain} ({current_ip})")
+                
+                # Parse SMB domain info
+                if 'Domain:' in line and current_ip:
+                    domain_match = re.search(r'Domain: ([^\s,]+)', line)
+                    if domain_match:
+                        domain = domain_match.group(1).lower().strip()
+                        if domain and domain != 'workgroup' and domain != 'unknown':
+                            realm = domain.upper()
+                            # Only add if not already present
+                            if realm not in domains:
+                                hostname = domain.split('.')[0] if '.' in domain else 'dc'
+                                domains[realm] = {
+                                    'domain': domain,
+                                    'hostname': hostname,
+                                    'kdc': f"{hostname}.{domain}" if '.' in domain else f"{hostname}.{domain}",
+                                    'ip': current_ip,
+                                    'source': 'nmap SMB',
+                                    'priority': 3
+                                }
+                                if self.verbose:
+                                    print(f"[+] Found via SMB: {domain} ({current_ip})")
+        except Exception as e:
+            if self.verbose:
+                print(f"[!] nmap failed: {e}")
+            
+        return domains
+    
+    def discover_with_ldap(self):
+        """Discover domains via ldapsearch"""
+        if self.verbose:
+            print("[*] Discovering via ldapsearch...")
+        domains = {}
+        
+        if not self.check_command('ldapsearch'):
+            return domains
+            
+        ips = self.get_network_range(self.network)
+        
+        def check_ldap(ip):
+            try:
+                # Try anonymous bind
+                cmd = ['ldapsearch', '-H', f'ldap://{ip}', '-x', '-b', '', '-s', 'base', '-LLL']
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+                
+                if 'defaultNamingContext' in result.stdout:
+                    domain_match = re.search(r'defaultNamingContext: DC=([^,]+),DC=([^\s,]+)', result.stdout)
+                    if domain_match:
+                        domain = f"{domain_match.group(1)}.{domain_match.group(2)}".lower().strip()
+                        return (ip, domain)
+                    
+                # Check for domain in output
+                domain_match = re.search(r'domain\s*[:=]\s*([^\s]+)', result.stdout, re.IGNORECASE)
+                if domain_match:
+                    domain = domain_match.group(1).lower().strip()
+                    return (ip, domain)
+            except:
+                pass
+            return None
+        
+        # Scan in parallel
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            futures = [executor.submit(check_ldap, ip) for ip in ips[:50]]
+            
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    ip, domain = result
+                    if domain and '.' in domain:
+                        realm = domain.upper()
+                        hostname = domain.split('.')[0]
+                        if realm not in domains:
+                            domains[realm] = {
+                                'domain': domain,
+                                'hostname': hostname,
+                                'kdc': f"{hostname}.{domain}",
+                                'ip': ip,
+                                'source': 'ldapsearch',
+                                'priority': 1
+                            }
+                            if self.verbose:
+                                print(f"[+] Found via ldap: {domain} ({ip})")
+                        
+        return domains
+    
+    def discover_with_arp(self):
+        """Discover via ARP scan"""
+        if self.verbose:
+            print("[*] Discovering via ARP scan...")
+        domains = {}
+        
+        try:
+            # Get network
+            net = self.network
+            if '/' in net:
+                net = net.split('/')[0]
+                
+            # ARP scan
+            result = subprocess.run(['arp-scan', '--localnet'], capture_output=True, text=True, timeout=30)
+            
+            # Extract IPs
+            ips = re.findall(r'(\d+\.\d+\.\d+\.\d+)', result.stdout)
+            
+            for ip in ips:
+                try:
+                    # Try reverse DNS
+                    hostname = socket.gethostbyaddr(ip)[0]
+                    if '.' in hostname and ('dc' in hostname.lower() or 'ad' in hostname.lower()):
+                        domain = '.'.join(hostname.split('.')[1:]).lower().strip()
+                        if domain:
+                            realm = domain.upper()
+                            host = hostname.split('.')[0]
+                            if realm not in domains:
+                                domains[realm] = {
+                                    'domain': domain,
+                                    'hostname': host,
+                                    'kdc': hostname,
+                                    'ip': ip,
+                                    'source': 'ARP',
+                                    'priority': 2
+                                }
+                                if self.verbose:
+                                    print(f"[+] Found via ARP: {domain} ({hostname})")
+                except:
+                    pass
+        except:
+            pass
+            
+        return domains
+    
+    def discover_with_dns_lookup(self):
+        """Discover via DNS lookups of common names"""
+        if self.verbose:
+            print("[*] Discovering via DNS lookups...")
+        domains = {}
+        
+        common_hosts = ['dc', 'dc01', 'dc02', 'ad', 'ad01', 'ad02', 'domain', 'server']
+        suffixes = ['htb', 'local', 'ext', 'corp', 'internal', 'lan', 'test', 'lab', 'org']
+        
+        for suffix in suffixes:
+            for host in common_hosts:
+                hostname = f"{host}.{suffix}"
+                try:
+                    ip = socket.gethostbyname(hostname)
+                    domain = suffix
+                    realm = domain.upper()
+                    if realm not in domains:
+                        domains[realm] = {
+                            'domain': domain,
+                            'hostname': host,
+                            'kdc': hostname,
+                            'ip': ip,
+                            'source': 'DNS lookup',
+                            'priority': 1
+                        }
+                        if self.verbose:
+                            print(f"[+] Found via DNS lookup: {domain} ({hostname})")
+                    break  # Found one, move to next suffix
+                except:
+                    pass
+                    
+        return domains
+    
+    def merge_domains(self, all_domains):
+        """Merge domain information, preferring higher priority sources"""
+        merged = {}
+        
+        for realm, info in all_domains.items():
+            if ',' in realm:
+                continue
+                
+            if realm not in merged:
+                merged[realm] = info
+            else:
+                # Keep the one with higher priority
+                if info.get('priority', 0) > merged[realm].get('priority', 0):
+                    merged[realm] = info
+                # If same priority, merge useful info
+                elif info.get('ip') and not merged[realm].get('ip'):
+                    merged[realm]['ip'] = info['ip']
+                if info.get('kdc') and not merged[realm].get('kdc'):
+                    merged[realm]['kdc'] = info['kdc']
+                    
+        return merged
+    
+    def detect_trusts(self):
+        """Detect trust relationships between discovered domains"""
+        if self.verbose:
+            print("[*] Detecting cross-forest trusts...")
+        
+        trusts = {}
+        # Get all valid realms (excluding any with commas)
+        valid_realms = [realm for realm in self.domains.keys() if ',' not in realm]
+        
+        if len(valid_realms) < 2:
+            return trusts
+            
+        # Check for trusts using various methods
+        for realm1 in valid_realms:
+            trusts[realm1] = []
+            for realm2 in valid_realms:
+                if realm1 != realm2:
+                    # Check DNS for trust
+                    domain1 = self.domains[realm1]['domain']
+                    domain2 = self.domains[realm2]['domain']
+                    
+                    try:
+                        # Check for _kerberos._tcp in other domain
+                        dns.resolver.resolve(f'_kerberos._tcp.{domain2}', 'SRV')
+                        trusts[realm1].append(realm2)
+                        if self.verbose:
+                            print(f"[+] Trust detected: {realm1} -> {realm2}")
+                    except:
+                        pass
+                        
+                    # If they share same network, likely trust
+                    if self.domains[realm1].get('ip') and self.domains[realm2].get('ip'):
+                        ip1 = self.domains[realm1]['ip']
+                        ip2 = self.domains[realm2]['ip']
+                        if ip1 and ip2 and ip1.split('.')[0] == ip2.split('.')[0]:
+                            if len(trusts[realm1]) < len(valid_realms) - 1:
+                                trusts[realm1].append(realm2)
+                                if self.verbose:
+                                    print(f"[+] Assumed trust: {realm1} -> {realm2}")
+        
+        self.trusts = trusts
+        return trusts
+    
+    def generate_config(self):
+        """Generate optimized krb5.conf"""
+        # Filter out malformed domains (those with commas)
+        valid_domains = {realm: info for realm, info in self.domains.items() 
+                        if ',' not in realm}
+        
+        if not valid_domains:
+            if self.verbose:
+                print("[!] No valid domains found!")
+            return self._generate_minimal_config()
+        
+        config = []
+        
+        # [libdefaults]
+        config.append("[libdefaults]")
+        config.append("dns_lookup_kdc = false")
+        config.append("dns_lookup_realm = false")
+        
+        # Set default realm to first valid domain
+        default_realm = list(valid_domains.keys())[0]
+        config.append(f"default_realm = {default_realm}")
+        config.append("ticket_lifetime = 24h")
+        config.append("renew_lifetime = 7d")
+        config.append("forwardable = true")
+        config.append("allow_weak_crypto = true")
+        config.append("")
+        
+        # [realms]
+        config.append("[realms]")
+        for realm, info in valid_domains.items():
+            config.append(f"{realm} = {{")
+            config.append(f"    kdc = {info['kdc']}")
+            
+            # Add additional KDCs if discovered
+            if info.get('backup_kdcs'):
+                for backup in info['backup_kdcs']:
+                    config.append(f"    kdc = {backup}")
+                    
+            config.append(f"    admin_server = {info['kdc']}")
+            config.append(f"    master_kdc = {info['kdc']}")
+            config.append(f"    default_domain = {info['domain']}")
+            
+            # Add trust info
+            if realm in self.trusts and self.trusts[realm]:
+                config.append(f"    # Trust: {', '.join(self.trusts[realm])}")
+                
+            # Add IP as comment
+            if info.get('ip'):
+                config.append(f"    # IP: {info['ip']}")
+            if info.get('source'):
+                config.append(f"    # Source: {info['source']}")
+                
+            config.append("}")
+            config.append("")
+        
+        # [domain_realm]
+        config.append("[domain_realm]")
+        for realm, info in valid_domains.items():
+            config.append(f".{info['domain']} = {realm}")
+            config.append(f"{info['domain']} = {realm}")
+        
+        # [capaths] for cross-realm trust paths
+        if len(valid_domains) > 1:
+            config.append("")
+            config.append("[capaths]")
+            realms = list(valid_domains.keys())
+            for realm1 in realms:
+                for realm2 in realms:
+                    if realm1 != realm2:
+                        config.append(f"    {realm1} = {{")
+                        config.append(f"        {realm2} = .")
+                        config.append(f"    }}")
+        
+        # [appdefaults]
+        config.append("")
+        config.append("[appdefaults]")
+        config.append("    forwardable = true")
+        config.append("    proxiable = true")
+        config.append("    validate = false")
+        config.append("    renewable = true")
+        config.append("    no-addresses = true")
+        
+        # [logging]
+        config.append("")
+        config.append("[logging]")
+        config.append("    default = FILE:/var/log/krb5libs.log")
+        
+        return "\n".join(config)
+    
+    def _generate_minimal_config(self):
+        """Generate minimal config when no domains found"""
+        return """[libdefaults]
+default_realm = HTB.LOCAL
+ticket_lifetime = 24h
+renew_lifetime = 7d
+forwardable = true
+allow_weak_crypto = true
+
+[realms]
+HTB.LOCAL = {
+    kdc = 172.16.20.1
+    admin_server = 172.16.20.1
+    default_domain = htb.local
+}
+
+[domain_realm]
+.htb.local = HTB.LOCAL
+htb.local = HTB.LOCAL
+
+[appdefaults]
+forwardable = true
+proxiable = true
+validate = false
+renewable = true
+no-addresses = true"""
+    
+    def save_config(self, path='/etc/krb5.conf'):
+        """Save configuration"""
+        config = self.generate_config()
+        
+        try:
+            with open(path, 'w') as f:
+                f.write(config)
+            if self.verbose:
+                print(f"[+] Saved to {path}")
+            return True
+        except PermissionError:
+            try:
+                with open('krb5.conf', 'w') as f:
+                    f.write(config)
+                if self.verbose:
+                    print(f"[+] Saved to ./krb5.conf (use sudo for {path})")
+                return True
+            except:
+                if self.verbose:
+                    print(f"[!] Failed to save config")
+                return False
+    
+    def run(self):
+        """Main execution"""
+        print("="*60)
+        print("Mcb0b0 UNIVERSAL CROSS-FOREST KERBEROS GENERATOR")
+        print("="*60)
+        print(f"[*] Network: {self.network}")
+        print("[*] Starting discovery...\n")
+        
+        # Try all discovery methods
+        methods = [
+            self.discover_with_dns_lookup,
+            self.discover_with_dns_srv,
+            self.discover_with_dns_ns,
+            self.discover_with_ldap,
+            self.discover_with_nmap,
+            self.discover_with_nxc,
+            self.discover_with_arp,
+        ]
+        
+        all_domains = {}
+        for method in methods:
+            try:
+                result = method()
+                if result:
+                    # Merge but keep existing
+                    for realm, info in result.items():
+                        # Skip malformed realms (containing commas)
+                        if ',' in realm:
+                            continue
+                        if realm not in all_domains:
+                            all_domains[realm] = info
+                        elif not all_domains[realm].get('ip') and info.get('ip'):
+                            all_domains[realm].update(info)
+                        # Update KDC if new info has higher priority
+                        elif info.get('priority', 0) > all_domains[realm].get('priority', 0):
+                            all_domains[realm].update(info)
+                if all_domains and self.verbose:
+                    print(f"[*] Found {len(all_domains)} valid domains so far...")
+            except Exception as e:
+                if self.verbose:
+                    print(f"[!] Method failed: {e}")
+        
+        # Store all domains (including those with dots in realm name)
+        self.domains = all_domains
+        
+        if not self.domains:
+            print("\n[!] No domains discovered. Generating minimal config...")
+        else:
+            print(f"\n[+] Discovered {len(self.domains)} domain(s):")
+            for realm, info in self.domains.items():
+                print(f"    - {realm}: {info['domain']} ({info['kdc']}) [{info.get('source', 'unknown')}]")
+        
+        # Detect trusts
+        self.detect_trusts()
+        
+        # Generate and save
+        self.save_config()
+        
+        # Show config
+        print("\n" + "="*60)
+        print("Generated krb5.conf:")
+        print("="*60)
+        print(self.generate_config())
+        print("="*60)
+        
+        # Test resolution
+        print("\n[*] Testing KDC resolution:")
+        for realm, info in self.domains.items():
+            if ',' in realm:
+                continue
+            try:
+                socket.gethostbyname(info['kdc'])
+                print(f"[+] {realm}: {info['kdc']} - OK")
+                self.domains[realm]['kdc_resolved'] = True
+            except:
+                if info.get('ip'):
+                    try:
+                        socket.gethostbyname(info['ip'])
+                        print(f"[+] {realm}: {info['ip']} - OK (using IP)")
+                        # Update KDC to IP if hostname fails
+                        self.domains[realm]['kdc'] = info['ip']
+                        self.domains[realm]['kdc_resolved'] = True
+                    except:
+                        print(f"[!] {realm}: {info['kdc']} - FAILED")
+                        self.domains[realm]['kdc_resolved'] = False
+                else:
+                    print(f"[!] {realm}: {info['kdc']} - FAILED")
+                    self.domains[realm]['kdc_resolved'] = False
+        
+        # Update config with IPs if needed
+        if any(not self.domains[r].get('kdc_resolved', True) for r in self.domains if ',' not in r):
+            self.save_config()
+
+
+def show_help():
+    """Display help information"""
+    help_text = """
+DESCRIPTION:
+    Universal Kerberos domain discovery and krb5.conf generator for multi-forest Active Directory environments.
+
+USAGE:
+    crossrealms [OPTIONS] [NETWORK]
+
+OPTIONS:
+    -h, --help  Show this help message and exit
+    -v, --verbose Enable verbose output with detailed discovery information
+    -o, --output FILE   Save configuration to specified file (default: /etc/krb5.conf)
+    -s, --silent    Suppress all output except errors
+
+EXAMPLES:
+    # Auto-detect network and discover domains
+    crossrealms
+
+    # Scan specific network range
+    crossrealms 192.168.1.0/24
+
+    # Verbose mode with custom output file
+    crossrealms -v -o ./krb5.conf 10.0.0.0/24
+
+    # Silent mode
+    crossrealms -s 172.16.0.0/16
+
+"""
+    print(help_text)
+
+
+def main():
+    """Main entry point with argument parsing"""
+    parser = argparse.ArgumentParser(
+        description='Universal Cross-Forest Kerberos Generator - Discover domains and generate krb5.conf',
+        add_help=False  # We'll handle help manually for custom formatting
+    )
+    
+    parser.add_argument(
+        'network',
+        nargs='?',
+        help='Network range to scan (e.g., 192.168.1.0/24). If not specified, auto-detection will be attempted.'
+    )
+    
+    parser.add_argument(
+        '-h', '--help',
+        action='store_true',
+        help='Show this help message and exit'
+    )
+    
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Enable verbose output with detailed discovery information'
+    )
+    
+    parser.add_argument(
+        '-o', '--output',
+        metavar='FILE',
+        help='Save configuration to specified file (default: /etc/krb5.conf)'
+    )
+    
+    parser.add_argument(
+        '-s', '--silent',
+        action='store_true',
+        help='Suppress all output except errors'
+    )
+    
+    args = parser.parse_args()
+    
+    # Show help if requested
+    if args.help:
+        show_help()
+        sys.exit(0)
+    
+    # Create and run generator
+    generator = UniversalKrb5Generator(
+        network=args.network,
+        verbose=args.verbose
+    )
+    
+    # Override save path if specified
+    if args.output:
+        generator.save_config(args.output)
+    
+    # Run the generator
+    generator.run()
+
+if __name__ == "__main__":
+    main()
