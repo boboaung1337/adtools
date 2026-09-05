@@ -93,5 +93,8 @@ wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/kerbrute && sud
 # Download crossrealms
 wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/crossrealms && sudo mv crossrealms /usr/local/bin/ && sudo chmod +x /usr/local/bin/crossrealms
 
+# Download base64_pwd-to-NTLM.py
+wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/base64_pwd-to-NTLM.py && sudo mv base64_pwd-to-NTLM.py /usr/local/bin/ && sudo chmod +x /usr/local/bin/base64_pwd-to-NTLM.py
+
 echo "All tools installed successfully!"
 
