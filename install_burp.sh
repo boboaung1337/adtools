@@ -3,6 +3,10 @@
 # Burp Suite Professional Installation Script
 # Version: 2025.9.4
 
+# https://portswigger.net/burp/releases/
+
+# sudo rm -rf /opt/burpsuite_pro_v2025.9.4/burpsuite_pro_v2025.9.4.jar &&  sudo mv /home/kali/Downloads/burpsuite_desktop_v2026.4.3.jar /opt/burpsuite_pro_v2025.9.4/burpsuite_pro_v2025.9.4.jar
+
 set -e  # Exit on error
 
 echo "========================================="
