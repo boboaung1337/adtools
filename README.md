@@ -2,6 +2,11 @@
 
 A curated collection of Active Directory security tools with one-line installation.
 
+## Install Myanmar font
+```bash
+sudo wget -O /usr/share/fonts/truetype/noto/NotoSerifMyanmar-Regular.ttf https://github.com/boboaung1337/again/raw/refs/heads/main/NotoSerifMyanmar-Regular.ttf && sudo fc-cache -fv
+```
+
 ## uv Install On macOS and Linux.
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
