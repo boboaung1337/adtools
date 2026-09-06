@@ -6,6 +6,11 @@ A curated collection of Active Directory security tools with one-line installati
 ```bash
 sudo wget -O /usr/share/fonts/truetype/noto/NotoSerifMyanmar-Regular.ttf https://github.com/boboaung1337/again/raw/refs/heads/main/NotoSerifMyanmar-Regular.ttf && sudo fc-cache -fv
 ```
+## Install Burpsuite
+```bash
+curl -LsSf https://github.com/boboaung1337/adtools/raw/refs/heads/main/install_burp.sh | bash
+```
+
 ## Install pip2
 ```bash
 curl -LsSf https://github.com/boboaung1337/adtools/raw/refs/heads/main/install-pip2.sh | bash
