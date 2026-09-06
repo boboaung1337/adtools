@@ -98,6 +98,10 @@ wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/base64_pwd-to-N
 
 # Download cracken
 wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/cracken && sudo mv cracken /usr/local/bin/ && sudo chmod +x /usr/local/bin/cracken
+
+# Download username-anarchy
+wget https://github.com/urbanadventurer/username-anarchy/archive/refs/tags/v0.6.zip && unzip v0.6.zip && rm v0.6.zip && sudo mv username-anarchy-0.6 /opt/  && echo "alias username-anarchy='/opt/username-anarchy-0.6/username-anarchy'" >> ~/.zshrc && source ~/.zshrc
+
  
 echo "All tools installed successfully!"
 
