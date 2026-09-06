@@ -15,7 +15,7 @@ curl -LsSf https://github.com/boboaung1337/adtools/raw/refs/heads/main/install_b
 ```bash
 curl -LsSf https://github.com/boboaung1337/adtools/raw/refs/heads/main/install-pip2.sh | bash
 ```
-## uv Install On macOS and Linux.
+## Install uv
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
