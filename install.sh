@@ -18,6 +18,9 @@ wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/passthecert.py 
 # Download ntlm_theft.py
 wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/ntlm_theft.py && sudo mv ntlm_theft.py /usr/local/bin/ && sudo chmod +x /usr/local/bin/ntlm_theft.py
 
+# Download templates
+wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/templates.zip && unzip templates.zip && rm templates.zip && sudo mv templates /usr/local/bin/templates
+
 # Download keepass4brute
 wget https://github.com/boboaung1337/adtools/raw/refs/heads/main/keepass4brute && sudo mv keepass4brute /usr/local/bin/ && sudo chmod +x /usr/local/bin/keepass4brute
 
