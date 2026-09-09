@@ -1,4 +1,11 @@
 #!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "xlsxwriter>=3.2.9",
+# ]
+# ///
+
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
