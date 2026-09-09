@@ -1,4 +1,11 @@
 #!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "impacket>=0.13.1",
+# ]
+# ///
+
 # 
 # Author: GILLES Lionel aka topotam (@topotam77)
 # 
