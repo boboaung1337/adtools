@@ -1,4 +1,12 @@
 #!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "impacket>=0.13.1",
+#     "pyasn1>=0.6.4",
+# ]
+# ///
+
 # SECUREAUTH LABS. Copyright 2018 SecureAuth Corporation. All rights reserved.
 #
 # This software is provided under under a slightly modified version
