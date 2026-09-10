@@ -1,4 +1,13 @@
 #!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "impacket>=0.13.1",
+#     "ldap3>=2.9.1",
+#     "ldapdomaindump>=0.10.0",
+# ]
+# ///
+
 #
 # Almond (almond.consulting). Copyright (C) 2022 Almond. All rights reserved.
 #
