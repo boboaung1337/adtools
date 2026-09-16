@@ -1,4 +1,12 @@
 #!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "impacket>=0.13.1",
+#     "ldap3>=2.9.1",
+#     "pycryptodome>=3.23.0",
+# ]
+# ///
 from ldap3 import ALL, Server, Connection, NTLM, SASL, KERBEROS, extend, SUBTREE
 import argparse
 from binascii import hexlify
