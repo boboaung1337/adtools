@@ -4,7 +4,7 @@ A curated collection of Active Directory security tools with one-line installati
 
 ## Sublime text
 ```bash
-
+curl -LsSf https://github.com/boboaung1337/adtools/raw/refs/heads/main/sublime.sh | bash
 ```
 
 ## Install Myanmar font
