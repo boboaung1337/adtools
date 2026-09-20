@@ -6,6 +6,9 @@ A curated collection of Active Directory security tools with one-line installati
 ```bash
 curl -LsSf https://github.com/boboaung1337/adtools/raw/refs/heads/main/sublime.sh | bash
 ```
+```bash
+sudo curl -LsSf https://github.com/boboaung1337/adtools/raw/refs/heads/main/rustup-init.sh | bash
+```
 
 ## Install Myanmar font
 ```bash
