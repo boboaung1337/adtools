@@ -22,7 +22,7 @@ curl -LsSf https://github.com/boboaung1337/adtools/raw/refs/heads/main/install-p
 ```
 ## Install uv
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo UV_INSTALL_DIR="/usr/local/bin" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
 ```
 ## bloodhound Install
 ```bash
